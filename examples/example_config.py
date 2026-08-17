@@ -56,9 +56,11 @@ def build_config() -> SimulationConfig:
             cores_per_link=7,
             # Reduced from 320: arrival_rate is fixed at 20.0 (not to be raised further,
             # per explicit instruction), and at 320 slots that load produced 0% blocking
-            # -- no signal at all. Shrinking slot capacity instead gives the same fixed
-            # arrival_rate real contention: measured ~3.9% BP at arrival_rate=20 here.
-            fsus_per_core=110,
+            # -- no signal at all. Retuned to 300 (was 110) after enabling xt_avoided
+            # below: this network's 7-core layout has a hub core (6) adjacent to every
+            # other core, so XT-avoidance alone pushed BP from ~4% to ~36% at 110;
+            # 300 restores ~3.2% BP at arrival_rate=20 with XT-avoidance active.
+            fsus_per_core=300,
             fsu_width_ghz=12.5,
             core_qc_index=0,
             core_cc_index=1,
