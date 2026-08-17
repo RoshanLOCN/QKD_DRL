@@ -76,11 +76,22 @@ def base_config(topology_path: str, tmp_path) -> SimulationConfig:
             seed=123,
         ),
         reward=RewardConfig(served_base=1.0, beta_qc_cc_hops=0.1, beta_dc_hops=0.1, beta_efficiency=0.01),
-        ppo=PPOConfig(learning=learning, clip_epsilon=0.2, value_loss_coef=0.5),
+        ppo=PPOConfig(
+            learning=learning,
+            clip_epsilon=0.2,
+            value_loss_coef=0.5,
+            gae_lambda=0.95,
+            entropy_coef=0.01,
+            minibatch_size=4,
+            max_grad_norm=0.5,
+            normalize_advantages=True,
+            target_kl=None,
+        ),
         dqn=DQNConfig(learning=learning),
         exploration=ExplorationConfig(epsilon_start=0.5, epsilon_min=0.01, epsilon_decay=0.9),
         training=TrainingConfig(
-            num_episodes=2, requests_per_episode=10, checkpoint_path=str(tmp_path / "ckpt")
+            num_episodes=2, requests_per_episode=10, checkpoint_path=str(tmp_path / "ckpt"),
+            checkpoint_bp_window=1,
         ),
         evaluation=EvaluationConfig(arrival_rates=(1.0, 2.0), requests_per_run=10),
     )

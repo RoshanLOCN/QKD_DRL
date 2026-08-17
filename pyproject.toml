@@ -19,7 +19,7 @@ dependencies = [
 test = ["pytest>=7.0"]
 
 [tool.setuptools.packages.find]
-include = ["sseon_qkd_drl*"]
+include = ["agents*", "configs*", "core*", "env*", "request*", "training*"]
 
 [tool.pytest.ini_options]
-testpaths = ["sseon_qkd_drl/tests"]
+testpaths = ["tests"]

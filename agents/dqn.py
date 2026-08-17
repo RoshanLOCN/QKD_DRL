@@ -41,6 +41,10 @@ class DQNAgent(Agent):
         self._exploration = exploration
         self._rng = np.random.default_rng(seed)
 
+    @property
+    def gamma(self) -> float:
+        return self._learning.gamma
+
     def select(self, state: np.ndarray, mask: np.ndarray, explore: bool) -> ActionSelection:
         state_t = torch.from_numpy(np.asarray(state, dtype=np.float32)).to(self._device)
         mask_t = torch.from_numpy(np.asarray(mask, dtype=bool)).to(self._device)

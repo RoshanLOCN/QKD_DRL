@@ -59,8 +59,17 @@ def test_dqn_select_and_update(base_config):
     assert isinstance(agent.update(experiences), float)
 
 
-def test_exploration_decay(base_config):
-    agent = PPOAgent(base_config.ppo, base_config.exploration, 12, base_config.action_space_size, seed=4)
+def test_dqn_exploration_decay(base_config):
+    agent = DQNAgent(base_config.dqn, base_config.exploration, 12, base_config.action_space_size, seed=4)
     start = agent._epsilon
     agent.decay_exploration()
     assert agent._epsilon < start
+
+
+def test_ppo_decay_exploration_is_a_no_op(base_config):
+    # PPO's exploration is the policy's own categorical sampling, not an epsilon-greedy
+    # schedule (docs/training_diagnosis.md 4.3) -- decay_exploration() is inherited from
+    # Agent's no-op default, and PPOAgent carries no _epsilon at all.
+    agent = PPOAgent(base_config.ppo, base_config.exploration, 12, base_config.action_space_size, seed=4)
+    assert not hasattr(agent, "_epsilon")
+    agent.decay_exploration()

@@ -32,6 +32,12 @@ class Agent(ABC):
     #: Whether this agent learns from stored experience (drives buffering/updates).
     trainable: bool = False
 
+    @property
+    def gamma(self) -> Optional[float]:
+        """This agent's discount factor, for metrics that need to match training gamma
+        (e.g. logged G_t). ``None`` for agents with no notion of one (FF, RF)."""
+        return None
+
     @abstractmethod
     def select(self, state: np.ndarray, mask: np.ndarray, explore: bool) -> ActionSelection:
         """Return a selection whose action index is guaranteed feasible under ``mask``.
@@ -42,6 +48,12 @@ class Agent(ABC):
 
     def update(self, experiences) -> Optional[float]:  # pragma: no cover - default no-op
         """Learn from a batch of experiences. Returns an optional scalar loss."""
+        return None
+
+    def estimate_value(self, state: np.ndarray) -> Optional[float]:  # pragma: no cover - default no-op
+        """Critic value at ``state``, for bootstrapping through a state with no action
+        (e.g. a blocked arrival). ``None`` means this agent doesn't support it -- callers
+        must then skip buffering that state rather than fabricate a value for it."""
         return None
 
     def decay_exploration(self) -> None:  # pragma: no cover - default no-op

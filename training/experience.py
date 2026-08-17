@@ -15,14 +15,22 @@ import numpy as np
 
 @dataclass(frozen=True)
 class Experience:
-    """A single whole-QLR interaction."""
+    """A single whole-QLR interaction.
+
+    ``has_action`` is False for a blocked arrival: the environment offered no feasible
+    joint action, so ``action``/``mask``/``log_prob`` are meaningless, but ``state`` and
+    ``value`` (the critic's estimate at that state) are still real -- they let a return
+    computed over the *full* arrival trajectory carry the blocking penalty back into the
+    placement decisions that caused it, per the credit-assignment fix in the diagnosis.
+    """
 
     state: np.ndarray
-    action: int
+    action: Optional[int]
     reward: float
-    mask: np.ndarray
+    mask: Optional[np.ndarray]
     log_prob: Optional[float] = None
     value: Optional[float] = None
+    has_action: bool = True
 
 
 class ExperienceBuffer:

@@ -10,7 +10,7 @@ configuration cannot be built.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Tuple
+from typing import Optional, Tuple
 
 
 @dataclass(frozen=True)
@@ -192,12 +192,28 @@ class PPOConfig:
     learning: LearningConfig
     clip_epsilon: float
     value_loss_coef: float
+    gae_lambda: float                # GAE(lambda) mixing factor
+    entropy_coef: float              # exploration pressure on the actor's objective
+    minibatch_size: int              # SGD minibatch size within each on-policy update
+    max_grad_norm: float             # gradient clip norm, applied to actor and critic separately
+    normalize_advantages: bool       # whether to standardize advantages before the policy loss
+    target_kl: Optional[float]       # early-stop an update's epochs once mean approx-KL exceeds this; None disables
 
     def __post_init__(self) -> None:
         if self.clip_epsilon <= 0:
             raise ValueError("clip_epsilon must be > 0")
         if self.value_loss_coef < 0:
             raise ValueError("value_loss_coef must be >= 0")
+        if not (0.0 <= self.gae_lambda <= 1.0):
+            raise ValueError("gae_lambda must be in [0, 1]")
+        if self.entropy_coef < 0:
+            raise ValueError("entropy_coef must be >= 0")
+        if self.minibatch_size < 1:
+            raise ValueError("minibatch_size must be >= 1")
+        if self.max_grad_norm <= 0:
+            raise ValueError("max_grad_norm must be > 0")
+        if self.target_kl is not None and self.target_kl <= 0:
+            raise ValueError("target_kl must be > 0 when set")
 
 
 @dataclass(frozen=True)
@@ -229,12 +245,15 @@ class TrainingConfig:
     num_episodes: int
     requests_per_episode: int
     checkpoint_path: str
+    checkpoint_bp_window: int        # episodes averaged for best-BP checkpointing (see 4.5)
 
     def __post_init__(self) -> None:
         if self.num_episodes < 1:
             raise ValueError("num_episodes must be >= 1")
         if self.requests_per_episode < 1:
             raise ValueError("requests_per_episode must be >= 1")
+        if self.checkpoint_bp_window < 1:
+            raise ValueError("checkpoint_bp_window must be >= 1")
 
 
 @dataclass(frozen=True)

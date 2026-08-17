@@ -132,11 +132,14 @@ class JointRRCSAEnvironment:
     ) -> ProvisionOutcome:
         candidates = self.build_candidates(qlr)
         mask = build_joint_action_mask(candidates, self._config.routing, self._config.candidates)
+        # Built unconditionally (not just on the feasible path) so a blocked arrival still
+        # carries a state: the learner needs it to value-bootstrap through the blocking
+        # event, even though there is no action to attribute a policy gradient to.
+        state = self._encoder.build(candidates)
 
         if not mask.any():
-            return ProvisionOutcome(result=CommitResult.blocked(qlr.request_id), action_taken=False)
+            return ProvisionOutcome(result=CommitResult.blocked(qlr.request_id), action_taken=False, state=state)
 
-        state = self._encoder.build(candidates)
         selection = agent.select(state, mask, explore)
         action_tuple = decode_action(selection.action, self._config.routing, self._config.candidates)
         result = self._commit(qlr, candidates, action_tuple, release_time, next_update_time)

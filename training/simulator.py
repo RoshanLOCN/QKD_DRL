@@ -11,6 +11,7 @@ import sys
 import argparse
 import importlib.util
 import math
+from collections import deque
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Sequence, Tuple
 
@@ -74,7 +75,7 @@ def _run_episode(
     buffer: Optional[ExperienceBuffer],
     buffer_size: Optional[int],
 ) -> EpisodeMetrics:
-    metrics = EpisodeMetrics()
+    metrics = EpisodeMetrics(gamma=agent.gamma if agent.gamma is not None else 0.99)
     for _ in range(num_requests):
         current_time = traffic.advance_time()
         ctx.env.release_and_reassign(current_time, agent, explore)
@@ -83,18 +84,37 @@ def _run_episode(
         reward = compute_reward(outcome.result, ctx.config.reward)
         metrics.record(outcome.result.served, reward)
 
-        if buffer is not None and agent.trainable and outcome.action_taken:
-            assert outcome.state is not None and outcome.selection is not None and outcome.mask is not None
-            buffer.append(
-                Experience(
-                    state=outcome.state,
-                    action=outcome.selection.action,
-                    reward=reward,
-                    mask=outcome.mask,
-                    log_prob=outcome.selection.log_prob,
-                    value=outcome.selection.value,
+        if buffer is not None and agent.trainable:
+            if outcome.action_taken:
+                assert outcome.state is not None and outcome.selection is not None and outcome.mask is not None
+                buffer.append(
+                    Experience(
+                        state=outcome.state,
+                        action=outcome.selection.action,
+                        reward=reward,
+                        mask=outcome.mask,
+                        log_prob=outcome.selection.log_prob,
+                        value=outcome.selection.value,
+                    )
                 )
-            )
+            elif outcome.state is not None:
+                # Blocked arrival: no action to attribute a policy gradient to, but the
+                # state and a critic value are still real -- buffering it (when the agent
+                # supports it) is what lets the -X reward reach the learner at all. See
+                # docs/training_diagnosis.md section 2.
+                blocked_value = agent.estimate_value(outcome.state)
+                if blocked_value is not None:
+                    buffer.append(
+                        Experience(
+                            state=outcome.state,
+                            action=None,
+                            reward=reward,
+                            mask=None,
+                            value=blocked_value,
+                            has_action=False,
+                        )
+                    )
+
             if buffer_size is not None and buffer.is_full():
                 agent.update(buffer.items())
                 buffer.clear()
@@ -107,7 +127,13 @@ def train(config: SimulationConfig, agent: Agent, buffer_size: int, checkpoint_p
     ctx = initialize_system(config)
     traffic = TrafficGenerator(config.traffic, ctx.topology)
     buffer = ExperienceBuffer(buffer_size)
-    best_bp = math.inf
+    # Checkpointing on the rolling mean of the last `checkpoint_bp_window` episodes,
+    # not the raw per-episode BP: at this task's blocking rates, a single episode's BP
+    # is dominated by binomial sampling noise (see docs/training_diagnosis.md section 1),
+    # so checkpointing on it saves whichever episode got the luckiest arrival sequence
+    # rather than the best policy.
+    bp_window: deque = deque(maxlen=config.training.checkpoint_bp_window)
+    best_rolling_bp = math.inf
     history: List[Dict] = []
 
     # Display training load
@@ -131,9 +157,16 @@ def train(config: SimulationConfig, agent: Agent, buffer_size: int, checkpoint_p
         metrics = _run_episode(
             ctx, agent, traffic, config.training.requests_per_episode, True, buffer, buffer_size
         )
-        
+        bp_window.append(metrics.blocking_probability)
+        rolling_bp = sum(bp_window) / len(bp_window)
+
         history.append(
-            {"episode": episode, "bp": metrics.blocking_probability, "G_t": metrics.discounted_cumulative_reward}
+            {
+                "episode": episode,
+                "bp": metrics.blocking_probability,
+                "rolling_bp": rolling_bp,
+                "G_t": metrics.discounted_cumulative_reward,
+            }
         )
 
         if episode % save_every == 0 or episode == config.training.num_episodes - 1:
@@ -143,19 +176,36 @@ def train(config: SimulationConfig, agent: Agent, buffer_size: int, checkpoint_p
                 path=os.path.join(os.path.dirname(checkpoint_path) or ".", "training_results.xlsx"),
                 run_time=run_time,
             )
-        
+
         # INCLUDES G_t ONLY DURING TRAINING
-        log_msg = f"Episode {episode + 1:02d}/{config.training.num_episodes} | BP: {metrics.blocking_probability:.4f} | G_t: {metrics.discounted_cumulative_reward:.4f}"
-        
-        if metrics.blocking_probability < best_bp:
-            best_bp = metrics.blocking_probability
+        log_msg = (
+            f"Episode {episode + 1:02d}/{config.training.num_episodes} | "
+            f"BP: {metrics.blocking_probability:.4f} | RollingBP({len(bp_window)}): {rolling_bp:.4f} | "
+            f"G_t: {metrics.discounted_cumulative_reward:.4f}"
+        )
+
+        diagnostics = getattr(agent, "last_update_stats", None)
+        if diagnostics:
+            log_msg += (
+                f" | policy_loss={diagnostics.get('policy_loss', 0.0):.4f} "
+                f"value_loss={diagnostics.get('value_loss', 0.0):.4f} "
+                f"entropy={diagnostics.get('entropy', 0.0):.4f} "
+                f"approx_kl={diagnostics.get('approx_kl', 0.0):.4f} "
+                f"clip_frac={diagnostics.get('clip_fraction', 0.0):.3f} "
+                f"action_frac={diagnostics.get('action_fraction', 0.0):.3f}"
+            )
+
+        # Only checkpoint once the window is full: a partial window is exactly the
+        # single-noisy-episode problem this is meant to fix.
+        if len(bp_window) == bp_window.maxlen and rolling_bp < best_rolling_bp:
+            best_rolling_bp = rolling_bp
             save_checkpoint(agent, checkpoint_path)
-            log_msg += f" [New Best BP! Saved -> {checkpoint_path}]"
-            
+            log_msg += f" [New Best Rolling BP! Saved -> {checkpoint_path}]"
+
         print(log_msg)
 
-    print(f"Training complete. Overall Best BP: {best_bp:.4f}")
-    return {"best_bp": best_bp, "history": history, "checkpoint": checkpoint_path}
+    print(f"Training complete. Overall Best Rolling BP: {best_rolling_bp:.4f}")
+    return {"best_bp": best_rolling_bp, "history": history, "checkpoint": checkpoint_path}
 
 
 def evaluate(

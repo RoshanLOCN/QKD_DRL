@@ -27,10 +27,10 @@ def test_state_size_matches_encoder(base_config, topology):
 
 
 def test_state_vector_length_is_fixed(base_config, topology):
-    from sseon_qkd_drl.core.routing import precompute_routes
-    from sseon_qkd_drl.core.resource_grid import SlotTable
-    from sseon_qkd_drl.env.environment import JointRRCSAEnvironment
-    from sseon_qkd_drl.request.qlr import QLR
+    from core.routing import precompute_routes
+    from core.resource_grid import SlotTable
+    from env.environment import JointRRCSAEnvironment
+    from request.qlr import QLR
 
     caches = precompute_routes(topology, base_config.routing.k1, base_config.routing.k2, base_config.quantum.r_qkd_km)
     slot = SlotTable(topology.num_links, base_config.network.cores_per_link, base_config.network.fsus_per_core)

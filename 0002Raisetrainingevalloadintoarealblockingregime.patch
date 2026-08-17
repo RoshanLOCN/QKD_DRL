@@ -1,0 +1,58 @@
+From e514088dec78aa53e35cb4df0570768a050c3356 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Mon, 17 Aug 2026 16:06:21 +0000
+Subject: [PATCH 2/3] Raise training/eval load into a real blocking regime
+
+At the previous arrival_rate=5.0/holding=6.0 (30 Erlangs), measured BP was
+0% on the actual configured topology -- no blocking signal to learn from
+at all. Per explicit instruction: mean_holding_time raised to 15.0 (favor
+longer-held connections over an unrealistically high arrival rate),
+training arrival_rate set to 20.0 (300 Erlangs), and the evaluation sweep
+now starts at ~510 Erlangs (arrival_rate=34.0) up to 3000 Erlangs
+(arrival_rate=200.0) instead of the previous 60-600 Erlang range.
+
+Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_0194m9aimb37YXnetUmoqPom
+---
+ examples/example_config.py | 18 ++++++++++--------
+ 1 file changed, 10 insertions(+), 8 deletions(-)
+
+diff --git a/examples/example_config.py b/examples/example_config.py
+index 9e92ba2..9c127c5 100644
+--- a/examples/example_config.py
++++ b/examples/example_config.py
+@@ -75,13 +75,13 @@ def build_config() -> SimulationConfig:
+         routing=RoutingConfig(k1=5, k2=5),
+         candidates=CandidateConfig(i_qc=5, i_cc=5, i_dc=5),
+         traffic=TrafficConfig(
+-            # NOTE: at arrival_rate=5.0 (30 Erlangs), measured BP is only ~1.5% even
+-            # under a random feasible policy (docs/training_diagnosis.md section 4.8) --
+-            # 98%+ of decisions succeed regardless of what the agent picks, so there is
+-            # very little blocking signal to learn from at this load. Left unchanged
+-            # pending an explicit decision to raise it; see the caveat in the PR/summary.
+-            arrival_rate=5.0,
+-            mean_holding_time=6.0,
++            # Raised into a real load regime: at arrival_rate=5.0/holding=6.0 (30 Erlangs)
++            # measured BP was 0% on this topology -- no blocking signal at all to learn
++            # from. holding_time raised to 15.0 (connections held longer); training
++            # arrival_rate set to 20.0 per explicit instruction (300 Erlangs training
++            # load) -- the evaluation sweep below is the one that starts at 500 Erlangs.
++            arrival_rate=20.0,
++            mean_holding_time=15.0,
+             key_update_period=20.0,
+             b_qc=1.0,
+             b_cc_classes=(10.0, 20.0),
+@@ -111,7 +111,9 @@ def build_config() -> SimulationConfig:
+             checkpoint_bp_window=20,        # average over >=20 episodes before checkpointing (4.5)
+         ),
+         evaluation=EvaluationConfig(
+-            arrival_rates=(10.0, 15.0, 20.0, 25.0, 30.0, 40.0, 50.0, 60.0, 70.0, 80.0, 90.0, 100.0),
++            # Erlang load = arrival_rate * mean_holding_time (15.0). Starts at ~500
++            # Erlangs per explicit instruction: 34.0*15=510 up to 200.0*15=3000.
++            arrival_rates=(34.0, 40.0, 50.0, 60.0, 70.0, 80.0, 100.0, 120.0, 150.0, 200.0),
+             requests_per_run=3000,
+         ),
+     )
+-- 
+2.43.0
+

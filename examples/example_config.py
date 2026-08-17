@@ -4,8 +4,16 @@ Every number below is an example the *user* provides; the library itself ships n
 defaults. The values mirror the paper's Section X examples so the system is runnable
 out of the box; edit freely for your own study. Run with, e.g.::
 
-    python -m sseon_qkd_drl.training.simulator train --config sseon_qkd_drl/examples/example_config.py --agent ppo
-    python -m sseon_qkd_drl.training.simulator evaluate --config sseon_qkd_drl/examples/example_config.py
+    python -m training.simulator train --config examples/example_config.py --agent PPO
+    python -m training.simulator evaluate --config examples/example_config.py
+
+Learning hyperparameters below follow the fix order in docs/training_diagnosis.md
+section 5/6: buffer_size, learning_rate, gamma and hidden_sizes are resized, and the
+previously-missing PPO fields (entropy_coef, gae_lambda, minibatch_size, max_grad_norm,
+normalize_advantages, target_kl) are now present. This alone does not fix blocking
+probability -- that required the credit-assignment fix in agents/ppo.py and
+env/environment.py (diagnosis section 2); these hyperparameters are what let that fix
+actually train well once the signal is there.
 """
 
 from __future__ import annotations
@@ -35,155 +43,75 @@ _HERE = os.path.dirname(os.path.abspath(__file__))
 
 def build_config() -> SimulationConfig:
     learning = LearningConfig(
-        gamma=0.95,                 # Increased to 0.99 for better long-term reward stability
-        learning_rate=1e-5,         # Lowered to 3e-4 for gradual, stable learning
-        hidden_sizes=(128, 128),
-        buffer_size=64,             
+        gamma=0.99,                 # horizon 100 requests >> ~30-arrival mean connection lifetime
+        learning_rate=3e-4,
+        hidden_sizes=(256, 256),
+        buffer_size=2048,           # N: was 64 -- 2% coverage of the 3125-action space
         epochs_per_update=4,
     )
     return SimulationConfig(
         topology_path=os.path.join(_HERE, "sample_topology.json"),
         sentinel_value=-1.0,
         network=NetworkConfig(
-            cores_per_link=7,       
-            fsus_per_core=320,      
-            fsu_width_ghz=12.5,     
+            cores_per_link=7,
+            fsus_per_core=320,
+            fsu_width_ghz=12.5,
             core_qc_index=0,
             core_cc_index=1,
         ),
         modulation=ModulationConfig(
-            formats=(               
+            formats=(
                 ModulationFormat("BPSK", 1.0, 4000.0),
                 ModulationFormat("QPSK", 2.0, 2000.0),
                 ModulationFormat("8QAM", 3.0, 1000.0),
                 ModulationFormat("16QAM", 4.0, 500.0),
             ),
-            guard_band_fsus=1,      
+            guard_band_fsus=1,
         ),
         quantum=QuantumConfig(
-            f_qc_min=2,             
-            r_qkd_km=1500.0,        # Kept high so Tokyo12 links are valid
+            f_qc_min=2,
+            r_qkd_km=1500.0,        # kept high so Tokyo12 links are valid
         ),
         routing=RoutingConfig(k1=5, k2=5),
         candidates=CandidateConfig(i_qc=5, i_cc=5, i_dc=5),
         traffic=TrafficConfig(
-            arrival_rate=5.0,       # Set to 5.0 to create moderate, learnable contention
-            mean_holding_time=6.0,  
-            key_update_period=20.0, 
+            # NOTE: at arrival_rate=5.0 (30 Erlangs), measured BP is only ~1.5% even
+            # under a random feasible policy (docs/training_diagnosis.md section 4.8) --
+            # 98%+ of decisions succeed regardless of what the agent picks, so there is
+            # very little blocking signal to learn from at this load. Left unchanged
+            # pending an explicit decision to raise it; see the caveat in the PR/summary.
+            arrival_rate=5.0,
+            mean_holding_time=6.0,
+            key_update_period=20.0,
             b_qc=1.0,
-            b_cc_classes=(10.0, 20.0),        
+            b_cc_classes=(10.0, 20.0),
             b_dc_classes=(100.0, 200.0, 400.0),
             seed=2024,
         ),
         reward=RewardConfig(
             served_base=1.0, beta_qc_cc_hops=0.2, beta_dc_hops=0.2, beta_efficiency=0.05
         ),
-        ppo=PPOConfig(learning=learning, clip_epsilon=0.2, value_loss_coef=0.5),
+        ppo=PPOConfig(
+            learning=learning,
+            clip_epsilon=0.2,
+            value_loss_coef=0.5,
+            gae_lambda=0.95,
+            entropy_coef=0.01,
+            minibatch_size=256,
+            max_grad_norm=0.5,
+            normalize_advantages=True,
+            target_kl=0.02,
+        ),
         dqn=DQNConfig(learning=learning),
         exploration=ExplorationConfig(epsilon_start=1.0, epsilon_min=0.05, epsilon_decay=0.995),
         training=TrainingConfig(
             num_episodes=5000,
-            requests_per_episode=1500,
+            requests_per_episode=3000,      # was 1500 -- halves the per-episode BP noise floor
             checkpoint_path=os.path.join(_HERE, "checkpoints", "best_model"),
+            checkpoint_bp_window=20,        # average over >=20 episodes before checkpointing (4.5)
         ),
-        evaluation=EvaluationConfig(arrival_rates=(20.0, 40.0, 60.0, 80.0, 100.0), requests_per_run=1500),
+        evaluation=EvaluationConfig(
+            arrival_rates=(10.0, 15.0, 20.0, 25.0, 30.0, 40.0, 50.0, 60.0, 70.0, 80.0, 90.0, 100.0),
+            requests_per_run=3000,
+        ),
     )
-
-
-
-
-
-
-
-
-
-# """EXAMPLE configuration -- the caller-supplied values live here, not in the library.
-
-# Every number below is an example the *user* provides; the library itself ships no
-# defaults. The values mirror the paper's Section X examples so the system is runnable
-# out of the box; edit freely for your own study. Run with, e.g.::
-
-#     python -m sseon_qkd_drl.training.simulator train --config sseon_qkd_drl/examples/example_config.py --agent ppo
-#     python -m sseon_qkd_drl.training.simulator evaluate --config sseon_qkd_drl/examples/example_config.py
-# """
-
-# from __future__ import annotations
-
-# import os
-
-# from configs.config import (
-#     CandidateConfig,
-#     DQNConfig,
-#     EvaluationConfig,
-#     ExplorationConfig,
-#     LearningConfig,
-#     ModulationConfig,
-#     ModulationFormat,
-#     NetworkConfig,
-#     PPOConfig,
-#     QuantumConfig,
-#     RewardConfig,
-#     RoutingConfig,
-#     SimulationConfig,
-#     TrafficConfig,
-#     TrainingConfig,
-# )
-
-# _HERE = os.path.dirname(os.path.abspath(__file__))
-
-
-# def build_config() -> SimulationConfig:
-#     learning = LearningConfig(
-#         gamma=0.95,                 # Section X
-#         learning_rate=1e-3,         # Section X
-#         hidden_sizes=(128, 128),
-#         buffer_size=64,             # N
-#         epochs_per_update=4,
-#     )
-#     return SimulationConfig(
-#         topology_path=os.path.join(_HERE, "sample_topology.json"),
-#         sentinel_value=-1.0,
-#         network=NetworkConfig(
-#             cores_per_link=5,       
-#             fsus_per_core=320,      # S = 320 (Section X)
-#             fsu_width_ghz=12.5,     # Delta f = 12.5 GHz (Section X)
-#             core_qc_index=0,
-#             core_cc_index=1,
-#         ),
-#         modulation=ModulationConfig(
-#             formats=(               # distance-adaptive table, consistent with [4] (Section X)
-#                 ModulationFormat("BPSK", 1.0, 4000.0),
-#                 ModulationFormat("QPSK", 2.0, 2000.0),
-#                 ModulationFormat("8QAM", 3.0, 1000.0),
-#                 ModulationFormat("16QAM", 4.0, 500.0),
-#             ),
-#             guard_band_fsus=1,      # G
-#         ),
-#         quantum=QuantumConfig(
-#             f_qc_min=2,             # fixed QC footprint
-#             r_qkd_km=150.0,         # ~100-150 km QKD reach (Section X)
-#         ),
-#         routing=RoutingConfig(k1=3, k2=3),
-#         candidates=CandidateConfig(i_qc=3, i_cc=3, i_dc=3),
-#         traffic=TrafficConfig(
-#             arrival_rate=8.0,
-#             mean_holding_time=10.0,
-#             key_update_period=20.0,  # T
-#             b_qc=1.0,
-#             b_cc_classes=(10.0, 20.0),        # CC classes set lower (control channel)
-#             b_dc_classes=(100.0, 200.0, 400.0),
-#             seed=2024,
-#         ),
-#         reward=RewardConfig(
-#             served_base=1.0, beta_qc_cc_hops=0.2, beta_dc_hops=0.2, beta_efficiency=0.05
-#         ),
-#         ppo=PPOConfig(learning=learning, clip_epsilon=0.2, value_loss_coef=0.5),
-#         dqn=DQNConfig(learning=learning),
-#         exploration=ExplorationConfig(epsilon_start=1.0, epsilon_min=0.05, epsilon_decay=0.995),
-#         training=TrainingConfig(
-#             num_episodes=50,
-#             requests_per_episode=500,
-#             checkpoint_path=os.path.join(_HERE, "checkpoints", "best_model"),
-#         ),
-#         evaluation=EvaluationConfig(arrival_rates=(4.0, 8.0, 12.0, 16.0), requests_per_run=1000),
-#     )
