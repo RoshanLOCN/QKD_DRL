@@ -75,13 +75,13 @@ def build_config() -> SimulationConfig:
         routing=RoutingConfig(k1=5, k2=5),
         candidates=CandidateConfig(i_qc=5, i_cc=5, i_dc=5),
         traffic=TrafficConfig(
-            # NOTE: at arrival_rate=5.0 (30 Erlangs), measured BP is only ~1.5% even
-            # under a random feasible policy (docs/training_diagnosis.md section 4.8) --
-            # 98%+ of decisions succeed regardless of what the agent picks, so there is
-            # very little blocking signal to learn from at this load. Left unchanged
-            # pending an explicit decision to raise it; see the caveat in the PR/summary.
-            arrival_rate=5.0,
-            mean_holding_time=6.0,
+            # Raised into a real load regime: at arrival_rate=5.0/holding=6.0 (30 Erlangs)
+            # measured BP was 0% on this topology -- no blocking signal at all to learn
+            # from. holding_time raised to 15.0 (connections held longer); training
+            # arrival_rate set to 20.0 per explicit instruction (300 Erlangs training
+            # load) -- the evaluation sweep below is the one that starts at 500 Erlangs.
+            arrival_rate=20.0,
+            mean_holding_time=15.0,
             key_update_period=20.0,
             b_qc=1.0,
             b_cc_classes=(10.0, 20.0),
@@ -111,7 +111,9 @@ def build_config() -> SimulationConfig:
             checkpoint_bp_window=20,        # average over >=20 episodes before checkpointing (4.5)
         ),
         evaluation=EvaluationConfig(
-            arrival_rates=(10.0, 15.0, 20.0, 25.0, 30.0, 40.0, 50.0, 60.0, 70.0, 80.0, 90.0, 100.0),
+            # Erlang load = arrival_rate * mean_holding_time (15.0). Starts at ~500
+            # Erlangs per explicit instruction: 34.0*15=510 up to 200.0*15=3000.
+            arrival_rates=(34.0, 40.0, 50.0, 60.0, 70.0, 80.0, 100.0, 120.0, 150.0, 200.0),
             requests_per_run=3000,
         ),
     )
