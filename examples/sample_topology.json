@@ -1,0 +1,27 @@
+{
+  "name": "Network_B_12Node",
+  "nodes": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11],
+  "links": [
+    {"source": 0, "target": 1, "distance_km": 10.5},
+    {"source": 0, "target": 2, "distance_km": 6.2},
+    {"source": 0, "target": 3, "distance_km": 7.5},
+    {"source": 1, "target": 3, "distance_km": 8.0},
+    {"source": 1, "target": 6, "distance_km": 10.3},
+    {"source": 1, "target": 7, "distance_km": 9.1},
+    {"source": 1, "target": 8, "distance_km": 12.4},
+    {"source": 2, "target": 3, "distance_km": 7.1},
+    {"source": 2, "target": 4, "distance_km": 6.7},
+    {"source": 3, "target": 5, "distance_km": 5.0},
+    {"source": 3, "target": 6, "distance_km": 7.1},
+    {"source": 4, "target": 5, "distance_km": 1.9},
+    {"source": 4, "target": 9, "distance_km": 10.1},
+    {"source": 5, "target": 6, "distance_km": 5.0},
+    {"source": 5, "target": 10, "distance_km": 7.0},
+    {"source": 5, "target": 11, "distance_km": 11.5},
+    {"source": 6, "target": 7, "distance_km": 6.7},
+    {"source": 6, "target": 10, "distance_km": 7.5},
+    {"source": 7, "target": 8, "distance_km": 6.0},
+    {"source": 9, "target": 11, "distance_km": 10.5},
+    {"source": 10, "target": 11, "distance_km": 7.6}
+  ]
+}

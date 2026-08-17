@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=64", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sseon_qkd_drl"
+version = "0.1.0"
+description = "DRL-based joint QC/CC/DC Routing, Core and Spectrum Assignment for QKD-secured SS-EON (Tokyo12)"
+requires-python = ">=3.10"
+dependencies = [
+    "networkx>=3.0",
+    "numpy>=1.23",
+    "torch>=2.0",
+    "pandas>=2.0",
+    "openpyxl>=3.1",
+]
+
+[project.optional-dependencies]
+test = ["pytest>=7.0"]
+
+[tool.setuptools.packages.find]
+include = ["sseon_qkd_drl*"]
+
+[tool.pytest.ini_options]
+testpaths = ["sseon_qkd_drl/tests"]

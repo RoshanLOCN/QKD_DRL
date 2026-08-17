@@ -1,0 +1,12 @@
+{
+  "name": "mini",
+  "nodes": ["A", "B", "C", "D", "E"],
+  "links": [
+    {"source": "A", "target": "B", "distance_km": 50.0},
+    {"source": "B", "target": "C", "distance_km": 50.0},
+    {"source": "A", "target": "D", "distance_km": 60.0},
+    {"source": "D", "target": "C", "distance_km": 60.0},
+    {"source": "C", "target": "E", "distance_km": 40.0},
+    {"source": "B", "target": "E", "distance_km": 100.0}
+  ]
+}
