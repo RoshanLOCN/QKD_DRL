@@ -54,7 +54,11 @@ def build_config() -> SimulationConfig:
         sentinel_value=-1.0,
         network=NetworkConfig(
             cores_per_link=7,
-            fsus_per_core=320,
+            # Reduced from 320: arrival_rate is fixed at 20.0 (not to be raised further,
+            # per explicit instruction), and at 320 slots that load produced 0% blocking
+            # -- no signal at all. Shrinking slot capacity instead gives the same fixed
+            # arrival_rate real contention: measured ~3.9% BP at arrival_rate=20 here.
+            fsus_per_core=110,
             fsu_width_ghz=12.5,
             core_qc_index=0,
             core_cc_index=1,
@@ -75,11 +79,9 @@ def build_config() -> SimulationConfig:
         routing=RoutingConfig(k1=5, k2=5),
         candidates=CandidateConfig(i_qc=5, i_cc=5, i_dc=5),
         traffic=TrafficConfig(
-            # Raised into a real load regime: at arrival_rate=5.0/holding=6.0 (30 Erlangs)
-            # measured BP was 0% on this topology -- no blocking signal at all to learn
-            # from. holding_time raised to 15.0 (connections held longer); training
-            # arrival_rate set to 20.0 per explicit instruction (300 Erlangs training
-            # load) -- the evaluation sweep below is the one that starts at 500 Erlangs.
+            # arrival_rate is fixed at 20.0 per explicit instruction (not to be raised
+            # further); holding_time raised to 15.0. Blocking signal at this fixed rate
+            # comes from the reduced fsus_per_core above, not from arrival_rate itself.
             arrival_rate=20.0,
             mean_holding_time=15.0,
             key_update_period=20.0,
@@ -111,9 +113,11 @@ def build_config() -> SimulationConfig:
             checkpoint_bp_window=20,        # average over >=20 episodes before checkpointing (4.5)
         ),
         evaluation=EvaluationConfig(
-            # Erlang load = arrival_rate * mean_holding_time (15.0). Starts at ~500
-            # Erlangs per explicit instruction: 34.0*15=510 up to 200.0*15=3000.
-            arrival_rates=(34.0, 40.0, 50.0, 60.0, 70.0, 80.0, 100.0, 120.0, 150.0, 200.0),
+            # Rescaled for fsus_per_core=110 (was sized for the original 320 slots, which
+            # made this range mostly saturated). Spans 0% BP up through ~42% at rate=70,
+            # bracketing the fixed training rate (20.0) so its performance is visible
+            # in-sweep alongside the higher-load points.
+            arrival_rates=(10.0, 15.0, 20.0, 25.0, 30.0, 35.0, 40.0, 50.0, 60.0, 70.0),
             requests_per_run=3000,
         ),
     )
