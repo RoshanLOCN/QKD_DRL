@@ -43,7 +43,7 @@ _HERE = os.path.dirname(os.path.abspath(__file__))
 
 def build_config() -> SimulationConfig:
     learning = LearningConfig(
-        gamma=0.99,                 # horizon 100 requests >> ~30-arrival mean connection lifetime
+        gamma=0.95,                 # explicit instruction: horizon 20 requests for the 5000-episode run
         learning_rate=3e-4,
         hidden_sizes=(256, 256),
         buffer_size=2048,           # N: was 64 -- 2% coverage of the 3125-action space
