@@ -46,3 +46,28 @@ def test_multi_core_spans_data_pool():
     table.occupy([0], 2, 0, 10)
     blocks = feasible_blocks_multi_core([0], [2, 3], 4, table, cap=5)
     assert blocks and all(b.core == 3 for b in blocks)
+
+
+def test_xt_avoided_excludes_slots_occupied_on_adjacent_core():
+    # Mirrors the paper's Fig. 2 demonstration: core 1 occupies slot 0-2, so an
+    # XT-avoided search on adjacent core 0 must not offer that slot range at all,
+    # even though core 0 itself is entirely free.
+    table = _table(cores=3, fsus=10)
+    table.occupy([0], 1, 0, 3)
+    adjacency = {0: (1,), 1: (0, 2), 2: (1,)}
+
+    without_xt = feasible_blocks_single_core([0], 0, 3, table, cap=5)
+    assert (0, 3) in [(b.start, b.size) for b in without_xt]
+
+    with_xt = feasible_blocks_single_core([0], 0, 3, table, cap=5, adjacency=adjacency)
+    assert (0, 3) not in [(b.start, b.size) for b in with_xt]
+    # The remaining free run (3-9) on core 0 is unaffected -- core 2 (not adjacent
+    # to core 0) stays irrelevant, and core 1 is free there too.
+    assert (3, 3) in [(b.start, b.size) for b in with_xt]
+
+
+def test_xt_avoided_no_effect_without_adjacency():
+    table = _table(cores=3, fsus=10)
+    table.occupy([0], 1, 0, 3)
+    blocks = feasible_blocks_single_core([0], 0, 3, table, cap=5, adjacency=None)
+    assert (0, 3) in [(b.start, b.size) for b in blocks]

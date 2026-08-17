@@ -60,7 +60,8 @@ def base_config(topology_path: str, tmp_path) -> SimulationConfig:
         topology_path=topology_path,
         sentinel_value=-1.0,
         network=NetworkConfig(
-            cores_per_link=4, fsus_per_core=16, fsu_width_ghz=12.5, core_qc_index=0, core_cc_index=1
+            cores_per_link=4, fsus_per_core=16, fsu_width_ghz=12.5, core_qc_index=0, core_cc_index=1,
+            xt_avoided=True,
         ),
         modulation=_modulation(),
         quantum=QuantumConfig(f_qc_min=2, r_qkd_km=300.0),

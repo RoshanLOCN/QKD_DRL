@@ -68,14 +68,16 @@ def build_request_candidates(
 
         f_qc[k1_idx] = quantum.f_qc_min
         blocks_qc[k1_idx] = feasible_blocks_single_core(
-            k1_links, partition.core_qc, quantum.f_qc_min, slot_table, candidates.i_qc
+            k1_links, partition.core_qc, quantum.f_qc_min, slot_table, candidates.i_qc,
+            adjacency=partition.adjacency,
         )
 
         cc_fs = modulation.required_fs(topology.route_length_km(k1_route), qlr.b_cc)
         f_cc[k1_idx] = cc_fs
         blocks_cc[k1_idx] = (
             feasible_blocks_single_core(
-                k1_links, partition.core_cc, cc_fs, slot_table, candidates.i_cc
+                k1_links, partition.core_cc, cc_fs, slot_table, candidates.i_cc,
+                adjacency=partition.adjacency,
             )
             if cc_fs is not None
             else ()
@@ -89,7 +91,8 @@ def build_request_candidates(
             f_dc[(k1_idx, k2_idx)] = dc_fs
             blocks_dc[(k1_idx, k2_idx)] = (
                 feasible_blocks_multi_core(
-                    k2_links, partition.data_cores, dc_fs, slot_table, candidates.i_dc
+                    k2_links, partition.data_cores, dc_fs, slot_table, candidates.i_dc,
+                    adjacency=partition.adjacency,
                 )
                 if dc_fs is not None
                 else ()

@@ -10,11 +10,26 @@ their respective ``I`` candidate count. The asymmetry is intentional and preserv
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import List, Sequence, Tuple
+from typing import List, Mapping, Optional, Sequence, Tuple
 
 import numpy as np
 
 from core.resource_grid import SlotTable
+
+
+def _xt_safe_mask(
+    free_mask: np.ndarray, link_indices: Sequence[int], core: int, slot_table: SlotTable,
+    adjacency: Optional[Mapping[int, Sequence[int]]],
+) -> np.ndarray:
+    """Narrow ``free_mask`` (already free on ``core``) to slots that are also free on
+    every core adjacent to it -- the XT-avoided constraint: a slot occupied on one core
+    forbids that same slot on a physically adjacent core, for every other request."""
+    if not adjacency:
+        return free_mask
+    mask = free_mask
+    for adjacent_core in adjacency.get(core, ()):
+        mask = mask & slot_table.free_mask(link_indices, adjacent_core)
+    return mask
 
 
 @dataclass(frozen=True)
@@ -70,11 +85,17 @@ def feasible_blocks_single_core(
     required_fs: int,
     slot_table: SlotTable,
     cap: int,
+    adjacency: Optional[Mapping[int, Sequence[int]]] = None,
 ) -> Tuple[SingleCoreBlock, ...]:
-    """1-D closest-fit search on a single dedicated core (QC or CC)."""
+    """1-D closest-fit search on a single dedicated core (QC or CC).
+
+    ``adjacency`` (core -> physically adjacent cores), when given, applies the
+    XT-avoided constraint by excluding slots that are occupied on an adjacent core.
+    """
     if required_fs < 1:
         raise ValueError("required_fs must be >= 1")
     free_mask = slot_table.free_mask(link_indices, core)
+    free_mask = _xt_safe_mask(free_mask, link_indices, core, slot_table, adjacency)
     runs = [_RankedRun(core=core, start=s, run_length=length) for s, length in _free_runs(free_mask)]
     ranked = _rank_runs(runs, required_fs, cap)
     return tuple(SingleCoreBlock(start=r.start, size=required_fs) for r in ranked)
@@ -86,13 +107,15 @@ def feasible_blocks_multi_core(
     required_fs: int,
     slot_table: SlotTable,
     cap: int,
+    adjacency: Optional[Mapping[int, Sequence[int]]] = None,
 ) -> Tuple[MultiCoreBlock, ...]:
-    """2-D closest-fit search across the data-core pool (DC)."""
+    """2-D closest-fit search across the data-core pool (DC). See ``adjacency`` above."""
     if required_fs < 1:
         raise ValueError("required_fs must be >= 1")
     runs: List[_RankedRun] = []
     for core in data_cores:
         free_mask = slot_table.free_mask(link_indices, core)
+        free_mask = _xt_safe_mask(free_mask, link_indices, core, slot_table, adjacency)
         runs.extend(
             _RankedRun(core=core, start=s, run_length=length)
             for s, length in _free_runs(free_mask)

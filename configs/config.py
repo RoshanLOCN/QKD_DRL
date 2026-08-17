@@ -26,6 +26,7 @@ class NetworkConfig:
     fsu_width_ghz: float             # Delta f
     core_qc_index: int               # dedicated QC core index (the set {core_QC})
     core_cc_index: int               # dedicated CC core index (the set {core_CC})
+    xt_avoided: bool                 # forbid overlapping slots on physically adjacent cores
 
     def __post_init__(self) -> None:
         if self.cores_per_link < 3:

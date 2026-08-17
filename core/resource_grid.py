@@ -10,28 +10,44 @@ contiguous runs of the intersected free mask.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import Sequence, Tuple
+from dataclasses import dataclass, field
+from typing import Dict, Mapping, Sequence, Tuple
 
 import numpy as np
 
 from configs.config import NetworkConfig
+from core.topology import Topology
 
 
 @dataclass(frozen=True)
 class CorePartition:
-    """Fixed, network-wide partition of cores into QC / CC / data-pool roles."""
+    """Fixed, network-wide partition of cores into QC / CC / data-pool roles.
+
+    ``adjacency`` maps each core to the cores physically adjacent to it in the MCF
+    (empty when ``xt_avoided`` is off) -- see ``Topology.inter_core_adjacency``. It
+    drives the XT-avoided allocation constraint: a spectrum slot on one core is only
+    usable if that same slot is free on every adjacent core too.
+    """
 
     core_qc: int
     core_cc: int
     data_cores: Tuple[int, ...]
+    adjacency: Mapping[int, Tuple[int, ...]] = field(default_factory=dict)
 
     @classmethod
     def from_config(cls, config: NetworkConfig) -> "CorePartition":
+        adjacency: Dict[int, Tuple[int, ...]] = {}
+        if config.xt_avoided:
+            matrix = Topology.inter_core_adjacency(config.cores_per_link)
+            adjacency = {
+                core: tuple(other for other, connected in enumerate(row) if connected)
+                for core, row in enumerate(matrix)
+            }
         return cls(
             core_qc=config.core_qc_index,
             core_cc=config.core_cc_index,
             data_cores=config.data_core_indices,
+            adjacency=adjacency,
         )
 
 

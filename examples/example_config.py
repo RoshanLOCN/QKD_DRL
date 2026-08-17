@@ -62,6 +62,10 @@ def build_config() -> SimulationConfig:
             fsu_width_ghz=12.5,
             core_qc_index=0,
             core_cc_index=1,
+            # XT-avoided allocation (Xav-RQCD): a slot occupied on one core forbids
+            # that same slot on any physically adjacent core, for other requests.
+            # Set False to reproduce the paper's "relaxed XT constraint" comparison.
+            xt_avoided=True,
         ),
         modulation=ModulationConfig(
             formats=(

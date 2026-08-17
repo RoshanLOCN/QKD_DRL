@@ -175,10 +175,18 @@ class JointRRCSAEnvironment:
         k1_links = self._topology.route_link_indices(k1_route)
         k2_links = self._topology.route_link_indices(k2_route)
 
-        # Safety re-check (Algorithm 1, line 20): confirm all three are still free.
-        qc_ok = self._slot_table.is_block_free(k1_links, self._partition.core_qc, block_qc.start, block_qc.size)
-        cc_ok = self._slot_table.is_block_free(k1_links, self._partition.core_cc, block_cc.start, block_cc.size)
-        dc_ok = self._slot_table.is_block_free(k2_links, block_dc.core, block_dc.start, block_dc.size)
+        # Safety re-check (Algorithm 1, line 20): confirm all three are still free,
+        # including XT-avoided adjacency (a slot must also still be free on every
+        # core physically adjacent to the one being committed).
+        qc_ok = self._slot_table.is_block_free(
+            k1_links, self._partition.core_qc, block_qc.start, block_qc.size
+        ) and self._adjacent_free(k1_links, self._partition.core_qc, block_qc.start, block_qc.size)
+        cc_ok = self._slot_table.is_block_free(
+            k1_links, self._partition.core_cc, block_cc.start, block_cc.size
+        ) and self._adjacent_free(k1_links, self._partition.core_cc, block_cc.start, block_cc.size)
+        dc_ok = self._slot_table.is_block_free(
+            k2_links, block_dc.core, block_dc.start, block_dc.size
+        ) and self._adjacent_free(k2_links, block_dc.core, block_dc.start, block_dc.size)
         if not (qc_ok and cc_ok and dc_ok):
             return CommitResult.blocked(qlr.request_id)
 
@@ -212,6 +220,14 @@ class JointRRCSAEnvironment:
             hops_dc=self._topology.hop_count(k2_route),
             eta_cc=self._modulation.efficiency(self._topology.route_length_km(k1_route)),
             eta_dc=self._modulation.efficiency(self._topology.route_length_km(k2_route)),
+        )
+
+    def _adjacent_free(self, link_indices, core: int, start: int, size: int) -> bool:
+        """XT-avoided check: is ``start:start+size`` also free on every core adjacent
+        to ``core``? Empty adjacency (xt_avoided off) trivially passes."""
+        return all(
+            self._slot_table.is_block_free(link_indices, adjacent, start, size)
+            for adjacent in self._partition.adjacency.get(core, ())
         )
 
     def _free_record(self, record: ActiveRecord) -> None:
