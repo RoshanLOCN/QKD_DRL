@@ -166,6 +166,14 @@ def train(config: SimulationConfig, agent: Agent, buffer_size: int, checkpoint_p
                 "bp": metrics.blocking_probability,
                 "rolling_bp": rolling_bp,
                 "G_t": metrics.discounted_cumulative_reward,
+                # Undiscounted totals over the WHOLE episode. G_t (gamma=0.95) only
+                # weights the first ~60 arrivals -- which start from an empty network
+                # where nothing blocks under any policy -- so it sits in a narrow band
+                # (~30-32) regardless of learning. total_reward covers all requests and
+                # moves directly with BP (a 1-point BP drop at 3000 requests/episode is
+                # worth roughly +75 total reward), making progress visible.
+                "total_reward": metrics.reward_sum,
+                "avg_reward": metrics.average_reward,
             }
         )
 
@@ -181,7 +189,8 @@ def train(config: SimulationConfig, agent: Agent, buffer_size: int, checkpoint_p
         log_msg = (
             f"Episode {episode + 1:02d}/{config.training.num_episodes} | "
             f"BP: {metrics.blocking_probability:.4f} | RollingBP({len(bp_window)}): {rolling_bp:.4f} | "
-            f"G_t: {metrics.discounted_cumulative_reward:.4f}"
+            f"G_t: {metrics.discounted_cumulative_reward:.4f} | "
+            f"TotalR: {metrics.reward_sum:.1f} | AvgR: {metrics.average_reward:.4f}"
         )
 
         diagnostics = getattr(agent, "last_update_stats", None)
