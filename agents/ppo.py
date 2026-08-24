@@ -84,6 +84,10 @@ class RunningNormalizer:
 class PPOAgent(Agent):
     trainable = True
 
+    #: How many states a legacy (pre-normalizer-stats) checkpoint re-estimates its
+    #: observation statistics over at evaluation time before freezing them.
+    LEGACY_CALIBRATION_SAMPLES = 3000
+
     def __init__(
         self,
         config: PPOConfig,
@@ -105,6 +109,7 @@ class PPOAgent(Agent):
         )
         self._rng = np.random.default_rng(seed)
         self._normalizer = RunningNormalizer(state_size)
+        self._calibrating_legacy = False
         # exploration is accepted for interface parity with DQNAgent (simulator.py builds
         # both agents uniformly) but unused: PPO's exploration is the policy distribution
         # itself, not an epsilon-greedy schedule -- see the note in ``select``.
@@ -119,7 +124,7 @@ class PPOAgent(Agent):
         return torch.from_numpy(normalized.astype(np.float32)).to(self._device)
 
     def select(self, state: np.ndarray, mask: np.ndarray, explore: bool) -> ActionSelection:
-        if explore:
+        if explore or (self._calibrating_legacy and self._normalizer.count < self.LEGACY_CALIBRATION_SAMPLES):
             self._normalizer.update(state)
         state_t = self._normalized_state_tensor(state)
         mask_t = torch.from_numpy(np.asarray(mask, dtype=bool)).to(self._device)
@@ -269,8 +274,33 @@ class PPOAgent(Agent):
         return total_loss
 
     def state_dict(self):
-        return {"actor": self._actor.state_dict(), "critic": self._critic.state_dict()}
+        # The observation normalizer is part of the model: the actor/critic were trained
+        # exclusively on normalized inputs, so restoring the weights without the
+        # normalizer statistics feeds raw states (magnitudes up to ~300) into networks
+        # expecting ~N(0,1) and the policy degrades to near-random at evaluation.
+        return {
+            "actor": self._actor.state_dict(),
+            "critic": self._critic.state_dict(),
+            "normalizer_mean": torch.from_numpy(self._normalizer.mean.copy()),
+            "normalizer_var": torch.from_numpy(self._normalizer.var.copy()),
+            "normalizer_count": torch.tensor(self._normalizer.count, dtype=torch.float64),
+        }
 
     def load_state_dict(self, state) -> None:
         self._actor.load_state_dict(state["actor"])
         self._critic.load_state_dict(state["critic"])
+        if "normalizer_mean" in state:
+            self._normalizer.mean = state["normalizer_mean"].cpu().numpy().astype(np.float64)
+            self._normalizer.var = state["normalizer_var"].cpu().numpy().astype(np.float64)
+            self._normalizer.count = float(state["normalizer_count"].item())
+            self._calibrating_legacy = False
+        else:
+            # Legacy checkpoint saved before normalizer stats were included: fall back to
+            # re-estimating them online from the first eval states (see ``select``), which
+            # salvages the checkpoint without retraining. The earliest decisions of the
+            # first evaluation run are made with partially calibrated inputs.
+            self._calibrating_legacy = True
+            print(
+                "[PPOAgent] Legacy checkpoint without observation-normalizer statistics; "
+                f"re-calibrating online over the first {self.LEGACY_CALIBRATION_SAMPLES} states."
+            )
