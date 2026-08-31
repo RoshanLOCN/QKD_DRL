@@ -117,6 +117,11 @@ def build_config() -> SimulationConfig:
             requests_per_episode=3000,      # was 1500 -- halves the per-episode BP noise floor
             checkpoint_path=os.path.join(_HERE, "checkpoints", "best_model"),
             checkpoint_bp_window=20,        # average over >=20 episodes before checkpointing (4.5)
+            # Run A (mixed-load): each episode trains at a load drawn from this pool, so
+            # the policy actually sees the congested regimes it is evaluated on (10..70
+            # sweep). Run B (fixed-load baseline for comparison): set this to (20.0,).
+            # The draw is seeded from traffic.seed, so runs stay fully reproducible.
+            train_arrival_rates=(20.0, 25.0, 30.0, 35.0, 40.0, 50.0),
         ),
         evaluation=EvaluationConfig(
             # Rescaled for fsus_per_core=110 (was sized for the original 320 slots, which

@@ -247,6 +247,7 @@ class TrainingConfig:
     requests_per_episode: int
     checkpoint_path: str
     checkpoint_bp_window: int        # episodes averaged for best-BP checkpointing (see 4.5)
+    train_arrival_rates: Tuple[float, ...]  # per-episode load pool; a 1-tuple = fixed-load training
 
     def __post_init__(self) -> None:
         if self.num_episodes < 1:
@@ -255,6 +256,10 @@ class TrainingConfig:
             raise ValueError("requests_per_episode must be >= 1")
         if self.checkpoint_bp_window < 1:
             raise ValueError("checkpoint_bp_window must be >= 1")
+        if not self.train_arrival_rates:
+            raise ValueError("train_arrival_rates must be non-empty")
+        if any(r <= 0 for r in self.train_arrival_rates):
+            raise ValueError("all train_arrival_rates must be > 0")
 
 
 @dataclass(frozen=True)

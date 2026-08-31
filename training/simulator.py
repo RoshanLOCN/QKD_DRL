@@ -15,6 +15,7 @@ from collections import deque
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Sequence, Tuple
 
+import numpy as np
 import torch
 import pandas as pd
 from datetime import datetime, timezone
@@ -136,24 +137,32 @@ def train(config: SimulationConfig, agent: Agent, buffer_size: int, checkpoint_p
     best_rolling_bp = math.inf
     history: List[Dict] = []
 
-    # Display training load
-    erlang_load = config.traffic.arrival_rate * config.traffic.mean_holding_time
+    # Display training load. Training can run at a fixed load (1-tuple) or sample the
+    # episode's load from a pool -- a policy evaluated across a load sweep has to have
+    # SEEN congested states during training to act well in them.
+    rate_pool = config.training.train_arrival_rates
+    holding = config.traffic.mean_holding_time
     print("=" * 70)
     print(f"TRAINING LOAD PARAMETERS:")
-    print(f"  - Arrival Rate (lambda) : {config.traffic.arrival_rate}")
-    print(f"  - Mean Holding Time (mu): {config.traffic.mean_holding_time}")
-    print(f"  - Total Erlang Load     : {erlang_load:.2f} Erlangs")
+    print(f"  - Arrival Rate pool     : {rate_pool}")
+    print(f"  - Mean Holding Time (mu): {holding}")
+    print(f"  - Erlang Load range     : {min(rate_pool) * holding:.2f} .. {max(rate_pool) * holding:.2f} Erlangs")
     print(f"  - Requests per Episode  : {config.training.requests_per_episode}")
     print("=" * 70)
     print(f"Starting training loop across {config.training.num_episodes} episodes...")
 
     run_time = datetime.now(timezone.utc).isoformat(timespec="seconds")
     save_every = max(1, min(100, config.training.num_episodes // 10))
+    # Seeded independently of the traffic streams so the per-episode load sequence is
+    # reproducible from config.traffic.seed alone (same seed => same run, per protocol).
+    rate_rng = np.random.default_rng(config.traffic.seed)
 
     for episode in range(config.training.num_episodes):
         ctx.env.reset()
         traffic.reset(seed=config.traffic.seed + episode)
-        
+        episode_rate = float(rate_pool[int(rate_rng.integers(len(rate_pool)))])
+        traffic.configure_arrival_rate(episode_rate)
+
         metrics = _run_episode(
             ctx, agent, traffic, config.training.requests_per_episode, True, buffer, buffer_size
         )
@@ -163,6 +172,7 @@ def train(config: SimulationConfig, agent: Agent, buffer_size: int, checkpoint_p
         history.append(
             {
                 "episode": episode,
+                "arrival_rate": episode_rate,
                 "bp": metrics.blocking_probability,
                 "rolling_bp": rolling_bp,
                 "G_t": metrics.discounted_cumulative_reward,
@@ -188,6 +198,7 @@ def train(config: SimulationConfig, agent: Agent, buffer_size: int, checkpoint_p
         # INCLUDES G_t ONLY DURING TRAINING
         log_msg = (
             f"Episode {episode + 1:02d}/{config.training.num_episodes} | "
+            f"Rate: {episode_rate:4.1f} | "
             f"BP: {metrics.blocking_probability:.4f} | RollingBP({len(bp_window)}): {rolling_bp:.4f} | "
             f"G_t: {metrics.discounted_cumulative_reward:.4f} | "
             f"TotalR: {metrics.reward_sum:.1f} | AvgR: {metrics.average_reward:.4f}"

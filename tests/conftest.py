@@ -92,7 +92,7 @@ def base_config(topology_path: str, tmp_path) -> SimulationConfig:
         exploration=ExplorationConfig(epsilon_start=0.5, epsilon_min=0.01, epsilon_decay=0.9),
         training=TrainingConfig(
             num_episodes=2, requests_per_episode=10, checkpoint_path=str(tmp_path / "ckpt"),
-            checkpoint_bp_window=1,
+            checkpoint_bp_window=1, train_arrival_rates=(1.0,),
         ),
         evaluation=EvaluationConfig(arrival_rates=(1.0, 2.0), requests_per_run=10),
     )
