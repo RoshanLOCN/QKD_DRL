@@ -128,13 +128,26 @@ def train(config: SimulationConfig, agent: Agent, buffer_size: int, checkpoint_p
     ctx = initialize_system(config)
     traffic = TrafficGenerator(config.traffic, ctx.topology)
     buffer = ExperienceBuffer(buffer_size)
-    # Checkpointing on the rolling mean of the last `checkpoint_bp_window` episodes,
-    # not the raw per-episode BP: at this task's blocking rates, a single episode's BP
-    # is dominated by binomial sampling noise (see docs/training_diagnosis.md section 1),
-    # so checkpointing on it saves whichever episode got the luckiest arrival sequence
-    # rather than the best policy.
-    bp_window: deque = deque(maxlen=config.training.checkpoint_bp_window)
-    best_rolling_bp = math.inf
+    # Checkpointing on rolling-mean BP, not the raw per-episode BP: at this task's
+    # blocking rates, a single episode's BP is dominated by binomial sampling noise
+    # (see docs/training_diagnosis.md section 1), so checkpointing on it saves whichever
+    # episode got the luckiest arrival sequence rather than the best policy.
+    #
+    # Under MIXED-LOAD training the rolling mean must additionally be computed PER RATE
+    # and then averaged with equal weight per rate. A single window mixed across rates
+    # scores the *draw luck* of the last few episodes, not the policy: one window that
+    # happens to contain mostly low-rate episodes sets an unbeatable record and no
+    # honest mixed window can ever undercut it (observed in Run A: last checkpoint at
+    # episode 149/5000, freezing 97% of training out of the saved model). Each rate's
+    # window holds the last `checkpoint_bp_window` episodes AT THAT RATE, so the score
+    # compares like with like; with a 1-tuple pool this reduces exactly to the old
+    # single-window behavior.
+    bp_window: deque = deque(maxlen=config.training.checkpoint_bp_window)  # logging only
+    rate_bp_windows: Dict[float, deque] = {
+        float(r): deque(maxlen=config.training.checkpoint_bp_window)
+        for r in config.training.train_arrival_rates
+    }
+    best_norm_bp = math.inf
     history: List[Dict] = []
 
     # Display training load. Training can run at a fixed load (1-tuple) or sample the
@@ -168,6 +181,13 @@ def train(config: SimulationConfig, agent: Agent, buffer_size: int, checkpoint_p
         )
         bp_window.append(metrics.blocking_probability)
         rolling_bp = sum(bp_window) / len(bp_window)
+        rate_bp_windows[episode_rate].append(metrics.blocking_probability)
+        # Load-normalized score: mean of the per-rate rolling means, defined only once
+        # EVERY rate's window is full so no rate is judged on a partial sample.
+        if all(len(w) == w.maxlen for w in rate_bp_windows.values()):
+            norm_bp = sum(sum(w) / len(w) for w in rate_bp_windows.values()) / len(rate_bp_windows)
+        else:
+            norm_bp = None
 
         history.append(
             {
@@ -175,6 +195,7 @@ def train(config: SimulationConfig, agent: Agent, buffer_size: int, checkpoint_p
                 "arrival_rate": episode_rate,
                 "bp": metrics.blocking_probability,
                 "rolling_bp": rolling_bp,
+                "load_norm_bp": norm_bp,
                 "G_t": metrics.discounted_cumulative_reward,
                 # Undiscounted totals over the WHOLE episode. G_t (gamma=0.95) only
                 # weights the first ~60 arrivals -- which start from an empty network
@@ -200,6 +221,7 @@ def train(config: SimulationConfig, agent: Agent, buffer_size: int, checkpoint_p
             f"Episode {episode + 1:02d}/{config.training.num_episodes} | "
             f"Rate: {episode_rate:4.1f} | "
             f"BP: {metrics.blocking_probability:.4f} | RollingBP({len(bp_window)}): {rolling_bp:.4f} | "
+            f"NormBP: {'warming' if norm_bp is None else f'{norm_bp:.4f}'} | "
             f"G_t: {metrics.discounted_cumulative_reward:.4f} | "
             f"TotalR: {metrics.reward_sum:.1f} | AvgR: {metrics.average_reward:.4f}"
         )
@@ -215,17 +237,36 @@ def train(config: SimulationConfig, agent: Agent, buffer_size: int, checkpoint_p
                 f"action_frac={diagnostics.get('action_fraction', 0.0):.3f}"
             )
 
-        # Only checkpoint once the window is full: a partial window is exactly the
-        # single-noisy-episode problem this is meant to fix.
-        if len(bp_window) == bp_window.maxlen and rolling_bp < best_rolling_bp:
-            best_rolling_bp = rolling_bp
+        # Only checkpoint once every rate's window is full: a partial window is exactly
+        # the single-noisy-episode problem this is meant to fix.
+        if norm_bp is not None and norm_bp < best_norm_bp:
+            best_norm_bp = norm_bp
             save_checkpoint(agent, checkpoint_path)
-            log_msg += f" [New Best Rolling BP! Saved -> {checkpoint_path}]"
+            log_msg += f" [New Best Load-Normalized BP! Saved -> {checkpoint_path}]"
 
         print(log_msg)
 
-    print(f"Training complete. Overall Best Rolling BP: {best_rolling_bp:.4f}")
-    return {"best_bp": best_rolling_bp, "history": history, "checkpoint": checkpoint_path}
+    # Always save the end-of-training policy too, alongside the best-BP checkpoint.
+    # Without this, everything learned after the last best-score episode is lost; to
+    # evaluate it, point training.checkpoint_path at the `<name>_final` base.
+    final_path = _final_checkpoint_path(checkpoint_path)
+    save_checkpoint(agent, final_path)
+    print(f"Final-episode policy saved to: {final_path}")
+    print(f"Training complete. Overall Best Load-Normalized BP: {best_norm_bp:.4f}")
+    return {
+        "best_bp": best_norm_bp,
+        "history": history,
+        "checkpoint": checkpoint_path,
+        "final_checkpoint": final_path,
+    }
+
+
+def _final_checkpoint_path(checkpoint_path: str) -> str:
+    """`.../best_model.ppo.pt` -> `.../best_model_final.ppo.pt` (keeps the
+    `checkpoint_path_for` naming, so evaluate finds it via base `best_model_final`)."""
+    parent, name = os.path.split(checkpoint_path)
+    stem, dot, rest = name.partition(".")
+    return os.path.join(parent, f"{stem}_final{dot}{rest}")
 
 
 def evaluate(
