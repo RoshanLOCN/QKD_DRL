@@ -8,3 +8,4 @@ venv/
 *.egg-info/
 checkpoints/
 *.xlsx
+_final_eval_config.py
