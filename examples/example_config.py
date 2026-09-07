@@ -113,7 +113,10 @@ def build_config() -> SimulationConfig:
         dqn=DQNConfig(learning=learning),
         exploration=ExplorationConfig(epsilon_start=1.0, epsilon_min=0.05, epsilon_decay=0.995),
         training=TrainingConfig(
-            num_episodes=5000,
+            # Reduced from 5000: in the Sept-2026 mixed-load run the last checkpoint
+            # improvement came at episode 3215 and everything after ~2000 gained only
+            # 0.0005 normalized BP, so 3500 covers the useful learning with margin.
+            num_episodes=3500,
             requests_per_episode=3000,      # was 1500 -- halves the per-episode BP noise floor
             checkpoint_path=os.path.join(_HERE, "checkpoints", "best_model"),
             checkpoint_bp_window=20,        # average over >=20 episodes before checkpointing (4.5)
