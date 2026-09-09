@@ -54,9 +54,37 @@ def test_dqn_select_and_update(base_config):
     sel = agent.select(np.zeros(state_size, dtype=np.float32), mask, explore=False)
     assert sel.action in (0, action_size - 1)
     experiences = [
-        Experience(np.zeros(state_size, dtype=np.float32), sel.action, -1.0, mask) for _ in range(4)
+        Experience(np.full(state_size, float(i), dtype=np.float32), sel.action, 1.0, mask) for i in range(8)
     ]
-    assert isinstance(agent.update(experiences), float)
+    # A blocked arrival in the middle folds into the preceding decision's reward.
+    experiences.insert(3, Experience(np.ones(state_size, dtype=np.float32), None, -1.0, None, has_action=False))
+    loss = agent.update(experiences)
+    assert isinstance(loss, float) and loss > 0.0
+    assert agent.last_update_stats["replay_size"] == 7  # 8 decisions -> 7 transitions
+    assert agent.last_update_stats["blocked_frac"] == pytest.approx(1 / 9)
+
+
+def test_dqn_build_transitions_folds_blocked_arrivals(base_config):
+    from agents.dqn import build_transitions
+
+    s = lambda v: np.full(3, float(v), dtype=np.float32)
+    m = np.ones(2, dtype=bool)
+    gamma = 0.5
+    experiences = [
+        Experience(s(0), 0, 1.0, m),
+        Experience(s(1), None, -1.0, None, has_action=False),
+        Experience(s(2), None, -1.0, None, has_action=False),
+        Experience(s(3), 1, 1.0, m),
+        Experience(s(4), 0, 1.0, m),
+    ]
+    t = build_transitions(experiences, gamma)
+    assert len(t) == 2
+    # decision 0 earns its own reward plus two discounted blocked penalties, then
+    # bootstraps from decision 3's state with gamma^3.
+    assert t[0].reward == 1.0 + gamma * -1.0 + gamma**2 * -1.0
+    assert t[0].discount == gamma**3
+    assert float(t[0].next_state[0]) == 3.0
+    assert t[1].reward == 1.0 and t[1].discount == gamma and float(t[1].next_state[0]) == 4.0
 
 
 def test_dqn_exploration_decay(base_config):

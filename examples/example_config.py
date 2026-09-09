@@ -110,7 +110,13 @@ def build_config() -> SimulationConfig:
             normalize_advantages=True,
             target_kl=0.02,
         ),
-        dqn=DQNConfig(learning=learning),
+        dqn=DQNConfig(
+            learning=learning,          # same gamma / lr / hidden sizes / buffer as PPO
+            replay_capacity=100_000,    # ~33 episodes of transitions
+            minibatch_size=256,
+            target_sync_interval=500,   # gradient steps (~16 buffer fills)
+            max_grad_norm=1.0,
+        ),
         exploration=ExplorationConfig(epsilon_start=1.0, epsilon_min=0.05, epsilon_decay=0.995),
         training=TrainingConfig(
             # Reduced from 5000: in the Sept-2026 mixed-load run the last checkpoint

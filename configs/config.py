@@ -219,9 +219,23 @@ class PPOConfig:
 
 @dataclass(frozen=True)
 class DQNConfig:
-    """DQN-specific parameters on top of the shared learning config."""
+    """DQN-specific parameters on top of the shared learning config (Mnih et al. 2015)."""
 
     learning: LearningConfig
+    replay_capacity: int             # persistent replay memory size, in transitions
+    minibatch_size: int              # transitions per gradient step
+    target_sync_interval: int        # gradient steps between target-network syncs
+    max_grad_norm: float             # gradient clip norm on the Q-network
+
+    def __post_init__(self) -> None:
+        if self.replay_capacity < 1:
+            raise ValueError("replay_capacity must be >= 1")
+        if self.minibatch_size < 1:
+            raise ValueError("minibatch_size must be >= 1")
+        if self.target_sync_interval < 1:
+            raise ValueError("target_sync_interval must be >= 1")
+        if self.max_grad_norm <= 0:
+            raise ValueError("max_grad_norm must be > 0")
 
 
 @dataclass(frozen=True)

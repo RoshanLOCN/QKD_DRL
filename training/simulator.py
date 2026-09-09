@@ -228,14 +228,9 @@ def train(config: SimulationConfig, agent: Agent, buffer_size: int, checkpoint_p
 
         diagnostics = getattr(agent, "last_update_stats", None)
         if diagnostics:
-            log_msg += (
-                f" | policy_loss={diagnostics.get('policy_loss', 0.0):.4f} "
-                f"value_loss={diagnostics.get('value_loss', 0.0):.4f} "
-                f"entropy={diagnostics.get('entropy', 0.0):.4f} "
-                f"approx_kl={diagnostics.get('approx_kl', 0.0):.4f} "
-                f"clip_frac={diagnostics.get('clip_fraction', 0.0):.3f} "
-                f"action_frac={diagnostics.get('action_fraction', 0.0):.3f}"
-            )
+            # Agent-specific keys (PPO: policy/value loss, entropy, KL, clip fraction;
+            # DQN: TD loss, mean Q, epsilon, replay size) -- printed in insertion order.
+            log_msg += " | " + " ".join(f"{k}={v:.4f}" for k, v in diagnostics.items())
 
         # Only checkpoint once every rate's window is full: a partial window is exactly
         # the single-noisy-episode problem this is meant to fix.

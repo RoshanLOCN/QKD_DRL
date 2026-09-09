@@ -88,7 +88,9 @@ def base_config(topology_path: str, tmp_path) -> SimulationConfig:
             normalize_advantages=True,
             target_kl=None,
         ),
-        dqn=DQNConfig(learning=learning),
+        dqn=DQNConfig(
+            learning=learning, replay_capacity=64, minibatch_size=4, target_sync_interval=2, max_grad_norm=1.0
+        ),
         exploration=ExplorationConfig(epsilon_start=0.5, epsilon_min=0.01, epsilon_decay=0.9),
         training=TrainingConfig(
             num_episodes=2, requests_per_episode=10, checkpoint_path=str(tmp_path / "ckpt"),
