@@ -97,7 +97,17 @@ def build_config() -> SimulationConfig:
             seed=2024,
         ),
         reward=RewardConfig(
-            served_base=1.0, beta_qc_cc_hops=0.2, beta_dc_hops=0.2, beta_efficiency=0.05
+            served_base=1.0,
+            # Extended Eq. 12: every term below is a decision quality in [0, 1].
+            # Ablation (original Eq. 12): relative_terms=False, beta_efficiency=0.05,
+            # beta_fit=beta_xt=beta_compact=0.0.
+            beta_qc_cc_hops=0.2,        # H_min/H_k1 -- full bonus for the shortest candidate
+            beta_dc_hops=0.2,           # H_min/H_k2
+            beta_efficiency=0.2,        # (eta_CC+eta_DC)/(2 eta_max); was 0.05 on raw eta (0..8)
+            relative_terms=True,
+            beta_fit=0.2,               # closest-fit block placement
+            beta_xt=0.2,                # penalty for sterilising adjacent-core spectrum (hub core 6)
+            beta_compact=0.05,          # tie-breaker: pack toward low FSU indices
         ),
         ppo=PPOConfig(
             learning=learning,

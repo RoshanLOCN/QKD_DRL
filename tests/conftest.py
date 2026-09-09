@@ -76,7 +76,10 @@ def base_config(topology_path: str, tmp_path) -> SimulationConfig:
             b_dc_classes=(40.0,),
             seed=123,
         ),
-        reward=RewardConfig(served_base=1.0, beta_qc_cc_hops=0.1, beta_dc_hops=0.1, beta_efficiency=0.01),
+        reward=RewardConfig(
+            served_base=1.0, beta_qc_cc_hops=0.1, beta_dc_hops=0.1, beta_efficiency=0.01,
+            relative_terms=True, beta_fit=0.1, beta_xt=0.1, beta_compact=0.05,
+        ),
         ppo=PPOConfig(
             learning=learning,
             clip_epsilon=0.2,

@@ -14,6 +14,7 @@ import numpy as np
 
 from agents.base import ActionSelection, Agent
 from configs.config import SimulationConfig
+from core.blocks import free_run_length, xt_new_footprint
 from core.modulation import ModulationTable
 from core.resource_grid import CorePartition, SlotTable
 from core.routing import RouteCaches
@@ -53,6 +54,9 @@ class JointRRCSAEnvironment:
         self._modulation = ModulationTable(config.modulation, config.network.fsu_width_ghz)
         self._encoder = StateEncoder(config, topology)
         self._registry = ActiveQLRRegistry()
+        # Constants for the decision-relative reward terms (env/reward.py).
+        self._eta_max = max(f.spectral_efficiency for f in config.modulation.formats)
+        self._adjacency_max = max((len(v) for v in self._partition.adjacency.values()), default=0)
 
     @property
     def slot_table(self) -> SlotTable:
@@ -190,6 +194,32 @@ class JointRRCSAEnvironment:
         if not (qc_ok and cc_ok and dc_ok):
             return CommitResult.blocked(qlr.request_id)
 
+        # Placement-quality terms, measured on the PRE-commit grid so they describe
+        # the decision the agent just made (see env/reward.py).
+        placements = (
+            (k1_links, self._partition.core_qc, block_qc),
+            (k1_links, self._partition.core_cc, block_cc),
+            (k2_links, block_dc.core, block_dc),
+        )
+        adjacency = self._partition.adjacency
+        fit = sum(
+            block.size / free_run_length(links, core, block.start, self._slot_table, adjacency)
+            for links, core, block in placements
+        ) / len(placements)
+        xt_units = sum(
+            xt_new_footprint(links, core, block.start, block.size, self._slot_table, adjacency)
+            for links, core, block in placements
+        )
+        xt_capacity = sum(block.size * len(links) for links, _, block in placements) * self._adjacency_max
+        xt = xt_units / xt_capacity if xt_capacity else 0.0
+        compactness = 1.0 - (
+            sum(block.start for _, _, block in placements) / len(placements)
+        ) / self._config.network.fsus_per_core
+        hops_min_qc_cc = min(self._topology.hop_count(r) for r in candidates.k1_routes)
+        hops_min_dc = min(
+            self._topology.hop_count(r) for routes in candidates.eligible_dc.values() for r in routes
+        )
+
         # Atomic commit: all three or none (no partial-commit/rollback).
         self._slot_table.occupy(k1_links, self._partition.core_qc, block_qc.start, block_qc.size)
         self._slot_table.occupy(k1_links, self._partition.core_cc, block_cc.start, block_cc.size)
@@ -220,6 +250,12 @@ class JointRRCSAEnvironment:
             hops_dc=self._topology.hop_count(k2_route),
             eta_cc=self._modulation.efficiency(self._topology.route_length_km(k1_route)),
             eta_dc=self._modulation.efficiency(self._topology.route_length_km(k2_route)),
+            hops_min_qc_cc=hops_min_qc_cc,
+            hops_min_dc=hops_min_dc,
+            eta_max=self._eta_max,
+            fit=fit,
+            xt=xt,
+            compactness=compactness,
         )
 
     def _adjacent_free(self, link_indices, core: int, start: int, size: int) -> bool:

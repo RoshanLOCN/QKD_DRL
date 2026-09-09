@@ -101,6 +101,59 @@ def feasible_blocks_single_core(
     return tuple(SingleCoreBlock(start=r.start, size=required_fs) for r in ranked)
 
 
+def free_run_length(
+    link_indices: Sequence[int],
+    core: int,
+    start: int,
+    slot_table: SlotTable,
+    adjacency: Optional[Mapping[int, Sequence[int]]] = None,
+) -> int:
+    """Length of the contiguous (XT-safe) free run that contains slot ``start`` on
+    ``core`` along the route -- the ``L`` a candidate block of size ``F`` is cut from.
+    Zero if ``start`` is not free. Used for the closeness-of-fit reward term F / L."""
+    mask = _xt_safe_mask(slot_table.free_mask(link_indices, core), link_indices, core, slot_table, adjacency)
+    if not mask[start]:
+        return 0
+    lo = start
+    while lo > 0 and mask[lo - 1]:
+        lo -= 1
+    hi = start
+    while hi + 1 < len(mask) and mask[hi + 1]:
+        hi += 1
+    return hi - lo + 1
+
+
+def xt_new_footprint(
+    link_indices: Sequence[int],
+    core: int,
+    start: int,
+    size: int,
+    slot_table: SlotTable,
+    adjacency: Optional[Mapping[int, Sequence[int]]] = None,
+) -> int:
+    """Number of (link, adjacent core, slot) units that occupying ``start:start+size``
+    on ``core`` makes NEWLY unusable under the XT-avoided constraint.
+
+    A slot on an adjacent core counts only if it was usable before this allocation:
+    free on that core and not already forbidden by one of *its* other occupied
+    neighbours. Spectrally aligning a block with neighbours' existing occupancy
+    therefore costs nothing extra, while opening a fresh spectral region on a
+    many-neighboured core (e.g. a hub core) costs the most."""
+    if not adjacency:
+        return 0
+    count = 0
+    for adjacent in adjacency.get(core, ()):
+        # Counted per link (not with the route-level AND) so a multi-link route
+        # sterilises proportionally more spectrum than a single-link one.
+        for link in link_indices:
+            per_link = slot_table.free_mask([link], adjacent)
+            for other in adjacency.get(adjacent, ()):
+                if other != core:
+                    per_link = per_link & slot_table.free_mask([link], other)
+            count += int(per_link[start:start + size].sum())
+    return count
+
+
 def feasible_blocks_multi_core(
     link_indices: Sequence[int],
     data_cores: Sequence[int],

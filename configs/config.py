@@ -155,12 +155,25 @@ class TrafficConfig:
 
 @dataclass(frozen=True)
 class RewardConfig:
-    """Whole-QLR reward parameters (Eq. 12)."""
+    """Whole-QLR reward parameters (Eq. 12, extended -- see env/reward.py).
+
+    ``relative_terms=False`` with the three placement betas at 0 reproduces the
+    original Eq. 12 exactly (the ablation configuration).
+    """
 
     served_base: float               # X
-    beta_qc_cc_hops: float           # beta   (bonus on 1 / H_k1)
-    beta_dc_hops: float              # beta'  (bonus on 1 / H_k2)
-    beta_efficiency: float           # beta'' (bonus on eta_CC + eta_DC)
+    beta_qc_cc_hops: float           # beta   (hop-count bonus, QC/CC route)
+    beta_dc_hops: float              # beta'  (hop-count bonus, DC route)
+    beta_efficiency: float           # beta'' (modulation-efficiency bonus)
+    relative_terms: bool             # True: H_min/H and eta/eta_max in [0,1]; False: 1/H and raw eta
+    beta_fit: float                  # closeness-of-fit bonus  (F / L, mean over channels)
+    beta_xt: float                   # XT-footprint penalty   (newly sterilised adjacent-core spectrum)
+    beta_compact: float              # spectral-compactness bonus (1 - mean start / S)
+
+    def __post_init__(self) -> None:
+        for name in ("beta_fit", "beta_xt", "beta_compact"):
+            if getattr(self, name) < 0:
+                raise ValueError(f"{name} must be >= 0 (the sign is applied in compute_reward)")
 
 
 @dataclass(frozen=True)
