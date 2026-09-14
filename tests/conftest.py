@@ -92,7 +92,8 @@ def base_config(topology_path: str, tmp_path) -> SimulationConfig:
             target_kl=None,
         ),
         dqn=DQNConfig(
-            learning=learning, replay_capacity=64, minibatch_size=4, target_sync_interval=2, max_grad_norm=1.0
+            learning=learning, replay_capacity=64, minibatch_size=4, target_sync_interval=2, max_grad_norm=1.0,
+            double_q=True, dueling=True
         ),
         exploration=ExplorationConfig(epsilon_start=0.5, epsilon_min=0.01, epsilon_decay=0.9),
         training=TrainingConfig(

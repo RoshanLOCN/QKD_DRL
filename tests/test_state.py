@@ -38,6 +38,13 @@ def test_state_vector_length_is_fixed(base_config, topology):
     encoder = StateEncoder(base_config, topology)
 
     qlr = QLR(0, "A", "C", 0.0, 3.0, 5.0, 3.0, 1.0, 10.0, 40.0)
-    vec = encoder.build(env.build_candidates(qlr))
+    vec = encoder.build(env.build_candidates(qlr), env.slot_table)
     assert vec.shape == (encoder.size,)
     assert vec.dtype == np.float32
+    # Empty network: zero global utilisation, fully free candidate routes.
+    assert tuple(vec[2:5]) == (0.0, 0.0, 0.0)
+    assert vec[5] == 1.0 and vec[6] == 1.0
+    env.provision(qlr, __import__("agents.heuristics", fromlist=["FirstFitAgent"]).FirstFitAgent(), False)
+    vec2 = encoder.build(env.build_candidates(qlr), env.slot_table)
+    assert vec2[2] > 0.0 and vec2[3] > 0.0 and vec2[4] > 0.0
+    assert vec2[5] < 1.0

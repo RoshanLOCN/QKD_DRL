@@ -27,7 +27,7 @@ $PY -m training.simulator train --config $CONFIG --agent DQN 2>&1 | tee "trainin
 mv -f "$CKPT_DIR/training_results.xlsx" "$CKPT_DIR/training_results_DQN_$STAMP.xlsx"
 
 echo "=== [3/4] Testing 1/2: BEST checkpoints ==="
-$PY -m training.simulator evaluate --config $CONFIG --methods PPO DQN FF RF 2>&1 | tee "evaluate_best_$STAMP.log"
+$PY -m training.simulator evaluate --config $CONFIG --methods PPO DQN FF BF RF 2>&1 | tee "evaluate_best_$STAMP.log"
 mv -f "$CKPT_DIR/evaluation_results.xlsx" "$CKPT_DIR/evaluation_results_best_$STAMP.xlsx"
 
 echo "=== [4/4] Testing 2/2: FINAL-episode checkpoints ==="
@@ -50,7 +50,7 @@ def build_config():
     training = dataclasses.replace(cfg.training, checkpoint_path=cfg.training.checkpoint_path + "_final")
     return dataclasses.replace(cfg, training=training)
 PYEOF
-$PY -m training.simulator evaluate --config examples/_final_eval_config.py --methods PPO DQN FF RF 2>&1 | tee "evaluate_final_$STAMP.log"
+$PY -m training.simulator evaluate --config examples/_final_eval_config.py --methods PPO DQN FF BF RF 2>&1 | tee "evaluate_final_$STAMP.log"
 mv -f "$CKPT_DIR/evaluation_results.xlsx" "$CKPT_DIR/evaluation_results_final_$STAMP.xlsx"
 
 echo "======================================================================"

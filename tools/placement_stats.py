@@ -15,7 +15,7 @@ from __future__ import annotations
 import argparse
 import collections
 
-from agents.heuristics import FirstFitAgent, RandomFitAgent
+from agents.heuristics import BestFitAgent, FirstFitAgent, RandomFitAgent
 from request.traffic import TrafficGenerator
 from training.simulator import (
     build_dqn_agent,
@@ -69,6 +69,8 @@ def main() -> None:
     for method in args.methods:
         if method == "FF":
             agent = FirstFitAgent()
+        elif method == "BF":
+            agent = BestFitAgent()
         elif method == "RF":
             agent = RandomFitAgent(config.traffic.seed)
         elif method == "PPO":

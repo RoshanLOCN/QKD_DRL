@@ -14,7 +14,12 @@ import numpy as np
 
 from agents.base import ActionSelection, Agent
 from configs.config import SimulationConfig
-from core.blocks import free_run_length, xt_new_footprint
+from core.blocks import (
+    feasible_blocks_multi_core,
+    feasible_blocks_single_core,
+    free_run_length,
+    xt_new_footprint,
+)
 from core.modulation import ModulationTable
 from core.resource_grid import CorePartition, SlotTable
 from core.routing import RouteCaches
@@ -139,7 +144,21 @@ class JointRRCSAEnvironment:
         # Built unconditionally (not just on the feasible path) so a blocked arrival still
         # carries a state: the learner needs it to value-bootstrap through the blocking
         # event, even though there is no action to attribute a policy gradient to.
-        state = self._encoder.build(candidates)
+        state = self._encoder.build(candidates, self._slot_table)
+
+        choose_placement = getattr(agent, "choose_placement", None)
+        if choose_placement is not None:
+            # Placement heuristics (true first-fit) search the FULL free-run list, not
+            # only the closest-fit candidates offered to the learners.
+            placement = choose_placement(candidates, self._search_blocks_factory(candidates))
+            if placement is None:
+                return ProvisionOutcome(result=CommitResult.blocked(qlr.request_id), action_taken=False, state=state)
+            k1, k2, block_qc, block_cc, block_dc = placement
+            result = self._commit_placement(
+                qlr, candidates, candidates.k1_routes[k1], candidates.eligible_dc[k1][k2],
+                block_qc, block_cc, block_dc, release_time, next_update_time,
+            )
+            return ProvisionOutcome(result=result, action_taken=result.served, state=state, mask=mask)
 
         if not mask.any():
             return ProvisionOutcome(result=CommitResult.blocked(qlr.request_id), action_taken=False, state=state)
@@ -154,6 +173,36 @@ class JointRRCSAEnvironment:
             selection=selection,
             mask=mask,
         )
+
+    def _search_blocks_factory(self, candidates: RequestCandidates):
+        """Uncapped block search over a candidate route, for placement heuristics."""
+        no_cap = 10**9
+
+        def search(k1: int, k2, channel: str):
+            k1_route = candidates.k1_routes[k1]
+            if channel == "QC":
+                return feasible_blocks_single_core(
+                    self._topology.route_link_indices(k1_route), self._partition.core_qc,
+                    candidates.f_qc[k1], self._slot_table, no_cap, adjacency=self._partition.adjacency,
+                )
+            if channel == "CC":
+                fs = candidates.f_cc.get(k1)
+                if fs is None:
+                    return ()
+                return feasible_blocks_single_core(
+                    self._topology.route_link_indices(k1_route), self._partition.core_cc,
+                    fs, self._slot_table, no_cap, adjacency=self._partition.adjacency,
+                )
+            fs = candidates.f_dc.get((k1, k2))
+            if fs is None:
+                return ()
+            k2_route = candidates.eligible_dc[k1][k2]
+            return feasible_blocks_multi_core(
+                self._topology.route_link_indices(k2_route), self._partition.data_cores,
+                fs, self._slot_table, no_cap, adjacency=self._partition.adjacency,
+            )
+
+        return search
 
     def _commit(
         self,
@@ -170,12 +219,23 @@ class JointRRCSAEnvironment:
         if i_qc >= len(blocks_qc) or i_cc >= len(blocks_cc) or i_dc >= len(blocks_dc):
             return CommitResult.blocked(qlr.request_id)
 
-        k1_route = candidates.k1_routes[k1]
-        k2_route = candidates.eligible_dc[k1][k2]
-        block_qc = blocks_qc[i_qc]
-        block_cc = blocks_cc[i_cc]
-        block_dc = blocks_dc[i_dc]
+        return self._commit_placement(
+            qlr, candidates, candidates.k1_routes[k1], candidates.eligible_dc[k1][k2],
+            blocks_qc[i_qc], blocks_cc[i_cc], blocks_dc[i_dc], release_time, next_update_time,
+        )
 
+    def _commit_placement(
+        self,
+        qlr: QLR,
+        candidates: RequestCandidates,
+        k1_route,
+        k2_route,
+        block_qc,
+        block_cc,
+        block_dc,
+        release_time: float,
+        next_update_time: float,
+    ) -> CommitResult:
         k1_links = self._topology.route_link_indices(k1_route)
         k2_links = self._topology.route_link_indices(k2_route)
 

@@ -126,6 +126,8 @@ def build_config() -> SimulationConfig:
             minibatch_size=256,
             target_sync_interval=500,   # gradient steps (~16 buffer fills)
             max_grad_norm=1.0,
+            double_q=True,              # van Hasselt et al. 2016
+            dueling=True,               # Wang et al. 2016: V(s) + A(s,a) heads
         ),
         exploration=ExplorationConfig(epsilon_start=1.0, epsilon_min=0.05, epsilon_decay=0.995),
         training=TrainingConfig(

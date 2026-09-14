@@ -2,7 +2,7 @@
 
 This is the top-level runnable. It builds the whole system from a :class:`SimulationConfig`
 (config-only; no defaults) and a topology file, trains PPO or DQN with best-BP
-checkpointing, and evaluates PPO/DQN/FF/RF over an arrival-rate sweep.
+checkpointing, and evaluates PPO/DQN/FF/BF/RF over an arrival-rate sweep.
 """
 
 from __future__ import annotations
@@ -21,7 +21,7 @@ import pandas as pd
 from datetime import datetime, timezone
 from agents.base import Agent
 from agents.dqn import DQNAgent
-from agents.heuristics import FirstFitAgent, RandomFitAgent
+from agents.heuristics import BestFitAgent, FirstFitAgent, RandomFitAgent
 from agents.ppo import PPOAgent
 from configs.config import SimulationConfig
 from core.resource_grid import SlotTable
@@ -36,6 +36,7 @@ from training.metrics import EpisodeMetrics, ResourceUtilization, resource_utili
 PPO = "PPO"
 DQN = "DQN"
 FF = "FF"
+BF = "BF"
 RF = "RF"
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -328,6 +329,8 @@ def _build_eval_agent(method: str, config: SimulationConfig, ctx: SystemContext,
         return agent
     if method == FF:
         return FirstFitAgent()
+    if method == BF:
+        return BestFitAgent()
     if method == RF:
         return RandomFitAgent(config.traffic.seed)
     raise ValueError(f"unknown evaluation method {method!r}")
@@ -442,7 +445,7 @@ def _main(argv: Optional[Sequence[str]] = None) -> None:
     parser.add_argument(
         "--methods",
         nargs="+",
-        default=[PPO, FF, RF],
+        default=[PPO, FF, BF, RF],
         help="methods to evaluate; RL baselines are only included when their checkpoint exists",
     )
     args = parser.parse_args(argv)

@@ -8,6 +8,8 @@ Where the two differ is the learner:
 * Transitions are stored in a persistent replay memory and minibatches are sampled
   uniformly from it (the on-policy buffer only decides *when* an update happens).
 * epsilon-greedy exploration over feasible actions; greedy argmax at evaluation.
+* Optional Double DQN targets (van Hasselt et al., 2016) and a dueling network
+  (Wang et al., 2016), both standard DQN-family components; see DQNConfig.
 
 Blocked arrivals carry no action, so they are folded into the preceding decision as
 extra discounted reward (a semi-MDP step): the transition that led to them earns
@@ -30,7 +32,7 @@ import torch
 from torch import nn
 
 from agents.base import ActionSelection, Agent
-from agents.networks import build_mlp, masked_logits
+from agents.networks import DuelingMLP, build_mlp, masked_logits
 from agents.ppo import RunningNormalizer
 from configs.config import DQNConfig, ExplorationConfig
 from training.experience import Experience
@@ -86,7 +88,8 @@ class DQNAgent(Agent):
         self._device = device if device is not None else torch.device("cpu")
         self._config = config
         self._learning = config.learning
-        self._q_net = build_mlp(state_size, self._learning.hidden_sizes, action_size).to(self._device)
+        net_cls = DuelingMLP if config.dueling else build_mlp
+        self._q_net = net_cls(state_size, self._learning.hidden_sizes, action_size).to(self._device)
         self._target_net = copy.deepcopy(self._q_net).to(self._device)
         self._target_net.eval()
         self._optimizer = torch.optim.Adam(self._q_net.parameters(), lr=self._learning.learning_rate)
@@ -152,7 +155,16 @@ class DQNAgent(Agent):
             next_masks = torch.from_numpy(np.stack([t.next_mask for t in batch])).to(self._device)
 
             with torch.no_grad():
-                next_q = masked_logits(self._target_net(next_states), next_masks).max(dim=1).values
+                target_q = masked_logits(self._target_net(next_states), next_masks)
+                if self._config.double_q:
+                    # Double DQN: the online net picks the next action, the target net
+                    # values it -- removes the max-operator overestimation that is
+                    # especially harmful with thousands of rarely-visited actions.
+                    online_q = masked_logits(self._q_net(next_states), next_masks)
+                    next_actions = online_q.argmax(dim=1, keepdim=True)
+                    next_q = target_q.gather(1, next_actions).squeeze(1)
+                else:
+                    next_q = target_q.max(dim=1).values
                 # A next state with no feasible action bootstraps from zero, not -inf.
                 next_q = torch.where(torch.isfinite(next_q), next_q, torch.zeros_like(next_q))
                 targets = rewards + discounts * next_q

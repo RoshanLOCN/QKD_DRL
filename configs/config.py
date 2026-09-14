@@ -239,6 +239,8 @@ class DQNConfig:
     minibatch_size: int              # transitions per gradient step
     target_sync_interval: int        # gradient steps between target-network syncs
     max_grad_norm: float             # gradient clip norm on the Q-network
+    double_q: bool                   # Double DQN targets (online argmax, target value)
+    dueling: bool                    # dueling V(s) + A(s,a) network architecture
 
     def __post_init__(self) -> None:
         if self.replay_capacity < 1:
